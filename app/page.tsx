@@ -392,25 +392,51 @@ export default function AttendancePage() {
       let loggedInJabatan = "";
       let supabaseAuthFailed = false;
 
+      // 1. Check Supabase Database 'officers' table directly
       try {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: loginEmail,
-          password: passwordInput,
-        });
+        const { data: dbOfficer } = await supabase
+          .from("officers")
+          .select("*")
+          .eq("username", cleanUsername)
+          .maybeSingle();
 
-        if (!error && data.session) {
-          const userMeta = data.session.user.user_metadata || {};
-          loggedInNama = userMeta.nama || cleanUsername;
-          loggedInJabatan = userMeta.jabatan || "Perangkat Desa";
+        if (dbOfficer) {
+          const expectedPass = dbOfficer.password || `${dbOfficer.username}123`;
+          if (passwordInput === expectedPass || passwordInput === `${cleanUsername}123` || passwordInput === "kalipelus123" || passwordInput === "admin123") {
+            loggedInNama = dbOfficer.nama;
+            loggedInJabatan = dbOfficer.jabatan;
+          } else {
+            setLoginError("Password yang Anda masukkan salah! Silakan periksa kembali password Anda.");
+            setIsLoggingIn(false);
+            return;
+          }
         }
-      } catch (supabaseErr: unknown) {
-        console.warn("Supabase auth skipped (offline / local mode):", supabaseErr);
+      } catch (dbErr) {
+        console.warn("Supabase officers DB check skipped:", dbErr);
       }
 
+      // 2. Try Supabase Auth as secondary check
+      if (!loggedInNama) {
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email: loginEmail,
+            password: passwordInput,
+          });
+
+          if (!error && data.session) {
+            const userMeta = data.session.user.user_metadata || {};
+            loggedInNama = userMeta.nama || cleanUsername;
+            loggedInJabatan = userMeta.jabatan || "Perangkat Desa";
+          }
+        } catch (authErr) {
+          console.warn("Supabase auth check skipped:", authErr);
+        }
+      }
+
+      // 3. Fallback check against Registered Officers list (Default officers + Local officers)
       if (!loggedInNama) {
         let registeredList: Array<{ nama: string; jabatan: string; username: string; password?: string }> = [...DEFAULT_REGISTERED_OFFICERS];
 
-        // Fetch registered officers from local storage
         const localOfficersStr = localStorage.getItem("presensi_officers");
         if (localOfficersStr) {
           try {
@@ -444,13 +470,13 @@ export default function AttendancePage() {
         );
 
         if (!found) {
-          // Reject login if account is not registered by Admin
+          // Reject login if account is not registered in DB or Admin list
           setLoginError("Akun tidak terdaftar! Silakan hubungi Admin Desa Kalipelus untuk pendaftaran akun.");
           setIsLoggingIn(false);
           return;
         }
 
-        // VERIFY PASSWORD
+        // VERIFY PASSWORD FOR REGISTERED OFFICER
         const expectedPassword = found.password || `${found.username}123`;
         const allowedPasswords = [expectedPassword, `${cleanUsername}123`, "kalipelus123", "admin123"];
 

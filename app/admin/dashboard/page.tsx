@@ -80,12 +80,16 @@ export default function DashboardPage() {
 
       const { data, error } = await supabase.from("officers").select("*");
       if (!error && data && data.length > 0) {
-        const merged: Officer[] = data.map((d: { id: string; nama: string; jabatan: string; username?: string; email?: string }) => ({
-          id: d.id,
-          nama: d.nama,
-          jabatan: d.jabatan,
-          username: d.username || d.email?.split("@")[0] || d.nama.toLowerCase().replace(/\s+/g, ""),
-        }));
+        const merged: Officer[] = data.map((d: { id: string; nama: string; jabatan: string; username?: string; email?: string; password?: string }) => {
+          const uName = d.username || d.email?.split("@")[0] || d.nama.toLowerCase().replace(/\s+/g, "");
+          return {
+            id: d.id,
+            nama: d.nama,
+            jabatan: d.jabatan,
+            username: uName,
+            password: d.password || `${uName}123`,
+          };
+        });
         
         currentLocal.forEach(loc => {
           if (!merged.some(m => m.username.toLowerCase() === loc.username.toLowerCase())) {

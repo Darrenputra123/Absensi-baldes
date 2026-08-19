@@ -28,9 +28,13 @@ CREATE TABLE IF NOT EXISTS public.officers (
     nama TEXT NOT NULL,
     jabatan TEXT NOT NULL,
     username TEXT NOT NULL UNIQUE,
+    password TEXT DEFAULT '123456',
     email TEXT UNIQUE,
     role TEXT NOT NULL DEFAULT 'officer'
 );
+
+-- Jalankan skrip ini jika tabel 'officers' sudah ada sebelumnya:
+ALTER TABLE public.officers ADD COLUMN IF NOT EXISTS password TEXT DEFAULT '123456';
 
 -- 3. Mengaktifkan Row Level Security (RLS) pada Tabel
 ALTER TABLE public.presensi ENABLE ROW LEVEL SECURITY;
@@ -58,10 +62,27 @@ ON public.officers
 FOR INSERT
 WITH CHECK (true);
 
+CREATE POLICY "Izinkan Update Data Perangkat Desa"
+ON public.officers
+FOR UPDATE
+USING (true);
+
 CREATE POLICY "Izinkan Hapus Data Perangkat Desa"
 ON public.officers
 FOR DELETE
 USING (true);
+
+-- Seed Data Awal Perangkat Desa Kalipelus
+INSERT INTO public.officers (nama, jabatan, username, password) VALUES
+('Sutrisno', 'Kepala Desa', 'sutrisno', 'sutrisno123'),
+('Budi Santoso', 'Sekretaris Desa', 'budi', 'budi123'),
+('Siti Aminah', 'Kaur Keuangan', 'siti', 'siti123'),
+('Joko Susilo', 'Kaur Umum & Perencanaan', 'joko', 'joko123'),
+('Rudi Hermawan', 'Kasi Pemerintahan', 'rudi', 'rudi123'),
+('Sri Wahyuni', 'Kasi Kesejahteraan & Pelayanan', 'sri', 'sri123'),
+('Ahmad Fauzi', 'Kadus 1', 'ahmad', 'ahmad123'),
+('Dewi Lestari', 'Kadus 2', 'dewi', 'dewi123')
+ON CONFLICT (username) DO NOTHING;
 
 -- 6. Membuat Storage Bucket 'attendance-photos' (Penyimpanan Foto Selfie)
 INSERT INTO storage.buckets (id, name, public)
