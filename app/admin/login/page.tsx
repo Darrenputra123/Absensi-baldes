@@ -113,20 +113,26 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex flex-col justify-between font-sans text-zinc-100 border-t-4 border-blue-600">
+    <div 
+      className="min-h-screen bg-zinc-950 bg-cover bg-center bg-no-repeat flex flex-col justify-between font-sans text-zinc-100 border-t-4 border-blue-600 relative overflow-hidden"
+      style={{ backgroundImage: "url('/bg-login.jpg')" }}
+    >
+      {/* Dark overlay backdrop */}
+      <div className="absolute inset-0 bg-zinc-950/80 backdrop-blur-[2px] pointer-events-none z-0" />
+
       {/* Go Back Link */}
-      <div className="p-4 max-w-md mx-auto w-full">
+      <div className="p-4 max-w-md mx-auto w-full relative z-10">
         <Link
           href="/"
-          className="inline-flex items-center gap-2 text-zinc-400 hover:text-white text-sm transition-all"
+          className="inline-flex items-center gap-2 text-zinc-300 hover:text-white text-sm transition-all bg-zinc-900/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-zinc-800 shadow-md"
         >
           <ArrowLeft className="h-4 w-4" /> Kembali ke Presensi
         </Link>
       </div>
 
       {/* Main card */}
-      <div className="grow flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden">
+      <div className="grow flex items-center justify-center p-4 relative z-10">
+        <div className="w-full max-w-md bg-zinc-900/90 backdrop-blur-md border border-zinc-800/80 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden">
           {/* Subtle background glow */}
           <div className="absolute -top-24 -left-24 w-48 h-48 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
           <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -171,7 +177,7 @@ export default function LoginPage() {
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Contoh: admin"
                   disabled={isLoading}
-                  className="w-full bg-zinc-950 text-white border border-zinc-850 rounded-2xl py-3.5 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all"
+                  className="w-full bg-zinc-950/80 text-white border border-zinc-800 rounded-2xl py-3.5 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all"
                   required
                 />
               </div>
@@ -192,7 +198,7 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   disabled={isLoading}
-                  className="w-full bg-zinc-950 text-white border border-zinc-850 rounded-2xl py-3.5 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all"
+                  className="w-full bg-zinc-950/80 text-white border border-zinc-800 rounded-2xl py-3.5 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all"
                   required
                 />
               </div>
@@ -232,7 +238,7 @@ export default function LoginPage() {
       </div>
 
       {/* Footer */}
-      <footer className="py-6 text-center text-xs text-zinc-600 border-t border-zinc-900/60">
+      <footer className="py-6 text-center text-xs text-zinc-400 border-t border-zinc-900/60 relative z-10 bg-zinc-950/60 backdrop-blur-xs">
         &copy; {new Date().getFullYear()} Pemerintah Desa Kalipelus. Admin Portal.
       </footer>
     </div>

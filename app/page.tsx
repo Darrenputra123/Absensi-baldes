@@ -21,6 +21,8 @@ interface AttendanceRecord {
   latitude: number | null;
   longitude: number | null;
   photo_url: string;
+  tipe?: string;
+  status_waktu?: string;
 }
 
 interface BeforeInstallPromptEvent extends Event {
@@ -60,9 +62,9 @@ export default function AttendancePage() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState("");
 
-  // Daily Attendance Checking State (1x per day limit)
-  const [hasAttendedToday, setHasAttendedToday] = useState(false);
-  const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
+  // Daily Attendance Checking State (2x per day: Masuk 08:00 & Pulang 16:00)
+  const [todayMasukRecord, setTodayMasukRecord] = useState<AttendanceRecord | null>(null);
+  const [todayPulangRecord, setTodayPulangRecord] = useState<AttendanceRecord | null>(null);
 
   // Camera & Location State
   const [cameraStatus, setCameraStatus] = useState<"idle" | "loading" | "active" | "denied" | "error">("idle");
@@ -217,11 +219,11 @@ export default function AttendancePage() {
     requestLocation();
   }, [initFaceApi, startCamera, requestLocation]);
 
-  // Check if officer has already checked in today (1x per day limit check)
+  // Check if officer has checked in for Masuk and Pulang today (2x per day check)
   const checkIfAttendedToday = useCallback(async (sessionObj: OfficerSession) => {
     const todayStr = new Date().toISOString().split("T")[0];
 
-    let foundRecord: AttendanceRecord | null = null;
+    const fetchedRecords: AttendanceRecord[] = [];
 
     try {
       const { data, error } = await supabase
@@ -230,49 +232,52 @@ export default function AttendancePage() {
         .like("nama", `${sessionObj.nama}%`)
         .gte("timestamp", `${todayStr}T00:00:00.000Z`)
         .lte("timestamp", `${todayStr}T23:59:59.999Z`)
-        .order("timestamp", { ascending: false })
-        .limit(1);
+        .order("timestamp", { ascending: true });
 
       if (!error && data && data.length > 0) {
-        foundRecord = {
-          id: data[0].id,
-          timestamp: data[0].timestamp,
-          latitude: data[0].latitude,
-          longitude: data[0].longitude,
-          photo_url: data[0].photo_url,
-        };
+        data.forEach((d: { id: string; timestamp: string; latitude: number | null; longitude: number | null; photo_url: string; tipe?: string; status_waktu?: string }) => {
+          fetchedRecords.push({
+            id: d.id,
+            timestamp: d.timestamp,
+            latitude: d.latitude,
+            longitude: d.longitude,
+            photo_url: d.photo_url,
+            tipe: d.tipe || "MASUK",
+            status_waktu: d.status_waktu || "Tepat Waktu",
+          });
+        });
       }
     } catch (err: unknown) {
       console.warn("Supabase today check skipped (offline mode):", err);
     }
 
     // Local storage fallback check
-    if (!foundRecord) {
-      const localLogsStr = localStorage.getItem("presensi_logs_local");
-      if (localLogsStr) {
-        const localLogs = JSON.parse(localLogsStr);
-        const match = localLogs.find((l: { nama: string; timestamp: string }) => 
-          l.nama.includes(sessionObj.nama) && l.timestamp.startsWith(todayStr)
-        );
-        if (match) {
-          foundRecord = {
-            id: match.id,
-            timestamp: match.timestamp,
-            latitude: match.latitude,
-            longitude: match.longitude,
-            photo_url: match.photo_url,
-          };
+    const localLogsStr = localStorage.getItem("presensi_logs_local");
+    if (localLogsStr) {
+      const localLogs = JSON.parse(localLogsStr);
+      const matches = localLogs.filter((l: { nama: string; timestamp: string }) => 
+        l.nama.includes(sessionObj.nama) && l.timestamp.startsWith(todayStr)
+      );
+      matches.forEach((m: { id?: string; timestamp: string; latitude?: number | null; longitude?: number | null; photo_url: string; tipe?: string; status_waktu?: string }) => {
+        if (!fetchedRecords.some(r => r.id === m.id || r.timestamp === m.timestamp)) {
+          fetchedRecords.push({
+            id: m.id,
+            timestamp: m.timestamp,
+            latitude: m.latitude || null,
+            longitude: m.longitude || null,
+            photo_url: m.photo_url,
+            tipe: m.tipe || "MASUK",
+            status_waktu: m.status_waktu || "Tepat Waktu",
+          });
         }
-      }
+      });
     }
 
-    if (foundRecord) {
-      setHasAttendedToday(true);
-      setTodayRecord(foundRecord);
-    } else {
-      setHasAttendedToday(false);
-      setTodayRecord(null);
-    }
+    const masukRec = fetchedRecords.find(r => r.tipe === "MASUK") || (fetchedRecords.length > 0 ? fetchedRecords[0] : null);
+    const pulangRec = fetchedRecords.find(r => r.tipe === "PULANG") || (fetchedRecords.length > 1 ? fetchedRecords[1] : null);
+
+    setTodayMasukRecord(masukRec || null);
+    setTodayPulangRecord(pulangRec || null);
   }, []);
 
   const checkOfficerSession = useCallback(async () => {
@@ -432,8 +437,8 @@ export default function AttendancePage() {
   const handleLogoutOfficer = async () => {
     localStorage.removeItem("presensi_officer_session");
     setOfficerSession(null);
-    setHasAttendedToday(false);
-    setTodayRecord(null);
+    setTodayMasukRecord(null);
+    setTodayPulangRecord(null);
     stopCamera();
     try {
       await supabase.auth.signOut();
@@ -618,8 +623,8 @@ export default function AttendancePage() {
       return;
     }
 
-    if (hasAttendedToday) {
-      showToast("Anda sudah melakukan presensi hari ini!", "error");
+    if (todayMasukRecord && todayPulangRecord) {
+      showToast("Anda sudah melakukan Presensi Masuk & Pulang hari ini!", "error");
       return;
     }
 
@@ -697,7 +702,33 @@ export default function AttendancePage() {
       const isoString = timestamp.toISOString();
       const formattedDate = isoString.split("T")[0];
       const safeName = officerSession.nama.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
-      const fileName = `${formattedDate}/${safeName}_${timestamp.getTime()}.jpg`;
+
+      // Determine attendance type (MASUK or PULANG)
+      const currentType = !todayMasukRecord ? "MASUK" : "PULANG";
+
+      // Calculate status_waktu based on operational hours (Masuk: 08:00 WIB, Pulang: 16:00 WIB)
+      let statusWaktu = "Tepat Waktu";
+      if (currentType === "MASUK") {
+        const targetMasuk = new Date(timestamp);
+        targetMasuk.setHours(8, 0, 0, 0);
+        if (timestamp > targetMasuk) {
+          const diffMs = timestamp.getTime() - targetMasuk.getTime();
+          const lateMins = Math.floor(diffMs / (1000 * 60));
+          statusWaktu = lateMins > 0 ? `Terlambat ${lateMins} Min` : "Tepat Waktu";
+        } else {
+          statusWaktu = "Tepat Waktu";
+        }
+      } else {
+        const targetPulang = new Date(timestamp);
+        targetPulang.setHours(16, 0, 0, 0);
+        if (timestamp < targetPulang) {
+          statusWaktu = "Pulang Cepat";
+        } else {
+          statusWaktu = "Selesai Tugas";
+        }
+      }
+
+      const fileName = `${formattedDate}/${safeName}_${currentType.toLowerCase()}_${timestamp.getTime()}.jpg`;
       const fullOfficerLabel = `${officerSession.nama} - ${officerSession.jabatan}`;
 
       let publicUrl = "";
@@ -730,6 +761,8 @@ export default function AttendancePage() {
         latitude: latitude,
         longitude: longitude,
         photo_url: publicUrl,
+        tipe: currentType,
+        status_waktu: statusWaktu,
       };
 
       try {
@@ -742,6 +775,8 @@ export default function AttendancePage() {
               latitude: latitude,
               longitude: longitude,
               photo_url: publicUrl,
+              tipe: currentType,
+              status_waktu: statusWaktu,
             },
           ])
           .select();
@@ -761,14 +796,20 @@ export default function AttendancePage() {
           latitude,
           longitude,
           photo_url: publicUrl,
+          tipe: currentType,
+          status_waktu: statusWaktu,
         };
         existingLogs.unshift(newLocalRecord);
         localStorage.setItem("presensi_logs_local", JSON.stringify(existingLogs));
         recordToSave.id = newLocalRecord.id;
       }
 
-      setHasAttendedToday(true);
-      setTodayRecord(recordToSave);
+      if (currentType === "MASUK") {
+        setTodayMasukRecord(recordToSave);
+      } else {
+        setTodayPulangRecord(recordToSave);
+      }
+
       setShowPreviewModal(false);
       stopCamera();
 
@@ -778,7 +819,8 @@ export default function AttendancePage() {
         origin: { y: 0.6 },
       });
 
-      showToast(`Presensi ${officerSession.nama} Berhasil Disimpan!`, "success");
+      const typeLabel = currentType === "MASUK" ? "Masuk" : "Pulang";
+      showToast(`Presensi ${typeLabel} ${officerSession.nama} Berhasil! (${statusWaktu})`, "success");
 
     } catch (error: unknown) {
       console.error("Presensi submission error:", error);
@@ -790,8 +832,14 @@ export default function AttendancePage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col justify-between font-sans select-none border-t-4 border-blue-600">
-      
+    <div 
+      className={`min-h-screen bg-zinc-950 text-zinc-100 flex flex-col justify-between font-sans select-none border-t-4 border-blue-600 relative overflow-hidden ${!officerSession ? 'bg-cover bg-center bg-no-repeat' : ''}`}
+      style={!officerSession ? { backgroundImage: "url('/bg-login.jpg')" } : undefined}
+    >
+      {!officerSession && (
+        <div className="absolute inset-0 bg-zinc-950/80 backdrop-blur-[2px] pointer-events-none z-0" />
+      )}
+
       {/* Top Navbar Header */}
       <header className="w-full bg-zinc-900/80 border-b border-zinc-800 backdrop-blur-md sticky top-0 z-40 py-3.5 px-4 md:px-8">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
@@ -865,7 +913,7 @@ export default function AttendancePage() {
       )}
 
       {/* MAIN LAYOUT: RESPONSIVE DESKTOP & MOBILE */}
-      <div className="max-w-6xl mx-auto w-full p-4 md:p-8 grow">
+      <div className="max-w-6xl mx-auto w-full p-4 md:p-8 grow relative z-10">
         
         {/* PWA Install Banner */}
         {showInstallBanner && (
@@ -888,7 +936,7 @@ export default function AttendancePage() {
 
         {!officerSession ? (
           /* OFFICER LOGIN SCREEN */
-          <main className="max-w-md mx-auto my-8 bg-zinc-900/90 border border-zinc-800 rounded-3xl p-6 md:p-8 shadow-2xl space-y-6 relative overflow-hidden">
+          <main className="max-w-md mx-auto my-8 bg-zinc-900/90 backdrop-blur-md border border-zinc-800/80 rounded-3xl p-6 md:p-8 shadow-2xl space-y-6 relative overflow-hidden">
             <div className="absolute -top-24 -left-24 w-48 h-48 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
             <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -979,73 +1027,107 @@ export default function AttendancePage() {
             
             {/* LEFT COLUMN: CAMERA VIEWFINDER / TODAY COMPLETED CARD */}
             <div className="md:col-span-7 space-y-4">
-              {hasAttendedToday ? (
-                /* ALREADY CHECKED IN TODAY CARD (1x PER DAY LIMIT ENFORCED) */
-                <div className="bg-linear-to-br from-emerald-950/40 via-zinc-900 to-zinc-900 border border-emerald-500/30 rounded-3xl p-6 md:p-8 shadow-2xl text-center space-y-5 relative overflow-hidden">
+              {todayMasukRecord && todayPulangRecord ? (
+                /* ALREADY CHECKED IN BOTH MASUK & PULANG CARD */
+                <div className="bg-linear-to-br from-emerald-950/40 via-zinc-900 to-zinc-900 border border-emerald-500/30 rounded-3xl p-6 md:p-8 shadow-2xl space-y-5 relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
                   <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-3xl flex items-center justify-center mx-auto shadow-inner">
                     <FileCheck className="h-8 w-8" />
                   </div>
 
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 text-center">
                     <span className="text-[11px] font-extrabold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full inline-block">
-                      Presensi Berhasil &bull; 1x Per Hari
+                      Presensi Lengkap &bull; Masuk & Pulang
                     </span>
-                    <h3 className="text-xl md:text-2xl font-extrabold text-white">Anda Sudah Presensi Hari Ini!</h3>
+                    <h3 className="text-xl md:text-2xl font-extrabold text-white">Presensi Hari Ini Selesai!</h3>
                     <p className="text-xs text-zinc-400">
-                      Terima kasih <span className="text-white font-bold">{officerSession.nama}</span>, kehadiran Anda telah dicatat oleh sistem.
+                      Terima kasih <span className="text-white font-bold">{officerSession.nama}</span>, data kehadiran Masuk & Pulang Anda telah tercatat.
                     </p>
                   </div>
 
-                  {todayRecord && (
-                    <div className="bg-zinc-950/80 border border-zinc-800 rounded-2xl p-4 max-w-md mx-auto text-left space-y-3 text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                    {/* Presensi Masuk Record Card */}
+                    <div className="bg-zinc-950/80 border border-zinc-800 rounded-2xl p-4 text-left space-y-2 text-xs">
                       <div className="flex items-center justify-between border-b border-zinc-850 pb-2">
-                        <span className="text-zinc-400">Waktu Presensi:</span>
-                        <span className="font-mono font-bold text-emerald-400">
-                          {new Date(todayRecord.timestamp).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} WIB
+                        <span className="font-extrabold text-blue-400 uppercase text-[10px] tracking-wider">Presensi Masuk</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                          todayMasukRecord.status_waktu?.includes("Terlambat")
+                            ? "bg-rose-500/10 text-rose-400 border-rose-500/30"
+                            : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                        }`}>
+                          {todayMasukRecord.status_waktu || "Tepat Waktu"}
                         </span>
                       </div>
-
-                      <div className="flex items-center justify-between">
-                        <span className="text-zinc-400">Lokasi GPS:</span>
-                        {todayRecord.latitude && todayRecord.longitude ? (
-                          <a
-                            href={`https://www.google.com/maps?q=${todayRecord.latitude},${todayRecord.longitude}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-400 hover:underline font-mono font-semibold"
-                          >
-                            {todayRecord.latitude.toFixed(4)}, {todayRecord.longitude.toFixed(4)}
-                          </a>
-                        ) : (
-                          <span className="text-zinc-500 italic">GPS Tidak Aktif</span>
-                        )}
-                      </div>
-
-                      {todayRecord.photo_url && (
-                        <div className="pt-1">
-                          <p className="text-zinc-400 mb-2">Foto Selfie Presensi:</p>
-                          <div className="w-24 h-24 rounded-xl overflow-hidden border border-zinc-800 mx-auto">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img 
-                              src={todayRecord.photo_url} 
-                              alt="Foto Bukti Presensi Hari Ini" 
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
+                      <p className="text-zinc-300 font-mono font-bold text-sm">
+                        {new Date(todayMasukRecord.timestamp).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} WIB
+                      </p>
+                      {todayMasukRecord.photo_url && (
+                        <div className="w-20 h-20 rounded-xl overflow-hidden border border-zinc-800 mt-2">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={todayMasukRecord.photo_url} alt="Foto Presensi Masuk" className="w-full h-full object-cover" />
                         </div>
                       )}
                     </div>
-                  )}
 
-                  <p className="text-[11px] text-zinc-500 italic">
-                    Sistem membatasi 1 kali presensi per hari untuk setiap perangkat desa.
+                    {/* Presensi Pulang Record Card */}
+                    <div className="bg-zinc-950/80 border border-zinc-800 rounded-2xl p-4 text-left space-y-2 text-xs">
+                      <div className="flex items-center justify-between border-b border-zinc-850 pb-2">
+                        <span className="font-extrabold text-amber-400 uppercase text-[10px] tracking-wider">Presensi Pulang</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                          todayPulangRecord.status_waktu === "Pulang Cepat"
+                            ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/30"
+                            : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                        }`}>
+                          {todayPulangRecord.status_waktu || "Selesai Tugas"}
+                        </span>
+                      </div>
+                      <p className="text-zinc-300 font-mono font-bold text-sm">
+                        {new Date(todayPulangRecord.timestamp).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} WIB
+                      </p>
+                      {todayPulangRecord.photo_url && (
+                        <div className="w-20 h-20 rounded-xl overflow-hidden border border-zinc-800 mt-2">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={todayPulangRecord.photo_url} alt="Foto Presensi Pulang" className="w-full h-full object-cover" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-zinc-500 italic text-center">
+                    Jadwal kerja resmi Desa Kalipelus: 08:00 WIB (Masuk) &bull; 16:00 WIB (Pulang).
                   </p>
                 </div>
               ) : (
                 /* LIVE CAMERA VIEWFINDER & PREVIEW ACTION BUTTON */
                 <>
+                  {/* Mode Banner Indicator */}
+                  <div className={`p-3.5 rounded-2xl border text-xs font-semibold flex items-center justify-between shadow-sm ${
+                    !todayMasukRecord
+                      ? "bg-blue-950/40 border-blue-500/40 text-blue-300"
+                      : "bg-amber-950/40 border-amber-500/40 text-amber-300"
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 shrink-0 text-blue-400" />
+                      <span>
+                        Mode Aktif: <strong className="text-white uppercase font-extrabold">{!todayMasukRecord ? "Presensi Masuk" : "Presensi Pulang"}</strong>
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                      {!todayMasukRecord ? "Target: 08:00 WIB" : "Target: 16:00 WIB"}
+                    </span>
+                  </div>
+
+                  {todayMasukRecord && !todayPulangRecord && (
+                    <div className="bg-emerald-950/30 border border-emerald-500/30 rounded-2xl p-3 text-xs text-emerald-300 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="h-4 w-4 text-emerald-400" />
+                        <span>Presensi Masuk Selesai jam <strong>{new Date(todayMasukRecord.timestamp).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} WIB</strong></span>
+                      </div>
+                      <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-bold">{todayMasukRecord.status_waktu}</span>
+                    </div>
+                  )}
+
                   <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-5 shadow-lg space-y-3">
                     <div className="flex items-center justify-between text-xs font-bold text-zinc-400 uppercase tracking-wider">
                       <span className="flex items-center gap-2">
@@ -1140,7 +1222,9 @@ export default function AttendancePage() {
                       cameraStatus !== "active" || !isWithinRadius
                         ? "bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700"
                         : isFaceDetected
-                        ? "bg-linear-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-950/50 active:scale-98"
+                        ? !todayMasukRecord
+                          ? "bg-linear-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-950/50 active:scale-98"
+                          : "bg-linear-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white shadow-amber-950/50 active:scale-98"
                         : "bg-amber-600 hover:bg-amber-500 text-white"
                     }`}
                   >
@@ -1152,7 +1236,11 @@ export default function AttendancePage() {
                     ) : (
                       <>
                         <UserCheck className="h-6 w-6" />
-                        <span>Ambil & Preview Foto Presensi</span>
+                        <span>
+                          {!todayMasukRecord 
+                            ? "Ambil & Preview Foto Presensi Masuk (08:00 WIB)" 
+                            : "Ambil & Preview Foto Presensi Pulang (16:00 WIB)"}
+                        </span>
                       </>
                     )}
                   </button>
@@ -1169,12 +1257,20 @@ export default function AttendancePage() {
 
                 <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
                   <span className={`text-[10px] uppercase font-extrabold tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1 border ${
-                    hasAttendedToday 
+                    todayMasukRecord && todayPulangRecord
                       ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                      : todayMasukRecord
+                      ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
                       : "bg-blue-500/10 text-blue-400 border-blue-500/20"
                   }`}>
                     <Sparkles className="h-3 w-3" />
-                    <span>{hasAttendedToday ? "Sudah Absen Hari Ini" : "Belum Absen Hari Ini"}</span>
+                    <span>
+                      {todayMasukRecord && todayPulangRecord
+                        ? "Selesai Masuk & Pulang"
+                        : todayMasukRecord
+                        ? "Sudah Masuk • Siap Pulang"
+                        : "Belum Absen Masuk"}
+                    </span>
                   </span>
 
                   <button
@@ -1413,7 +1509,7 @@ export default function AttendancePage() {
       )}
 
       {/* Page Footer */}
-      <footer className="w-full text-center py-4 text-xs text-zinc-500 border-t border-zinc-900 mt-6 bg-zinc-950">
+      <footer className="w-full text-center py-4 text-xs text-zinc-400 border-t border-zinc-900 mt-6 bg-zinc-950/70 backdrop-blur-xs relative z-10">
         <p>&copy; {new Date().getFullYear()} Pemerintah Desa Kalipelus. Portal Presensi Kehadiran Digital (KKN GIAT 16).</p>
       </footer>
     </div>

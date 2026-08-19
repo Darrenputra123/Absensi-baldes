@@ -18,6 +18,8 @@ interface AttendanceLog {
   latitude: number | null;
   longitude: number | null;
   photo_url: string;
+  tipe?: string;
+  status_waktu?: string;
 }
 
 interface Officer {
@@ -45,6 +47,7 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [typeFilter, setTypeFilter] = useState("ALL");
   
   // Modal Preview Image State
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
@@ -276,7 +279,12 @@ export default function DashboardPage() {
       matchesDate = matchesDate && logDate <= end;
     }
 
-    return matchesSearch && matchesDate;
+    const logTipe = log.tipe || "MASUK";
+    let matchesType = true;
+    if (typeFilter === "MASUK") matchesType = logTipe === "MASUK";
+    if (typeFilter === "PULANG") matchesType = logTipe === "PULANG";
+
+    return matchesSearch && matchesDate && matchesType;
   });
 
   const today = new Date().toISOString().split("T")[0];
@@ -297,6 +305,8 @@ export default function DashboardPage() {
       }),
       "Nama Petugas": log.nama.split(" - ")[0],
       "Jabatan": log.nama.split(" - ")[1] || "-",
+      "Tipe Presensi": log.tipe || "MASUK",
+      "Status Waktu": log.status_waktu || "Tepat Waktu",
       "Latitude": log.latitude || "-",
       "Longitude": log.longitude || "-",
       "Google Maps Link": log.latitude && log.longitude 
@@ -312,6 +322,8 @@ export default function DashboardPage() {
       { wch: 25 },  // Tanggal & Waktu
       { wch: 25 },  // Nama Petugas
       { wch: 25 },  // Jabatan
+      { wch: 15 },  // Tipe Presensi
+      { wch: 20 },  // Status Waktu
       { wch: 15 },  // Latitude
       { wch: 15 },  // Longitude
       { wch: 45 },  // Google Maps Link
@@ -419,7 +431,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-3.5">
             <div className="relative">
               <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-zinc-400 pointer-events-none">
                 <Search className="h-4.5 w-4.5" />
@@ -431,6 +443,18 @@ export default function DashboardPage() {
                 placeholder="Cari nama petugas..."
                 className="w-full bg-zinc-50 dark:bg-zinc-950 text-sm border border-zinc-200 dark:border-zinc-850 rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
               />
+            </div>
+
+            <div className="relative">
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="w-full bg-zinc-50 dark:bg-zinc-950 text-sm border border-zinc-200 dark:border-zinc-850 rounded-xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-zinc-700 dark:text-zinc-200 font-semibold"
+              >
+                <option value="ALL">Semua Tipe (Masuk & Pulang)</option>
+                <option value="MASUK">Presensi Masuk (08:00)</option>
+                <option value="PULANG">Presensi Pulang (16:00)</option>
+              </select>
             </div>
 
             <div className="relative">
@@ -492,6 +516,8 @@ export default function DashboardPage() {
               <thead className="bg-zinc-50 dark:bg-zinc-850 border-b border-zinc-200 dark:border-zinc-800 text-zinc-500 uppercase tracking-wider text-[11px] font-bold">
                 <tr>
                   <th scope="col" className="px-6 py-4">Tanggal & Waktu</th>
+                  <th scope="col" className="px-6 py-4">Tipe</th>
+                  <th scope="col" className="px-6 py-4">Status Waktu</th>
                   <th scope="col" className="px-6 py-4">Nama Petugas</th>
                   <th scope="col" className="px-6 py-4">Jabatan</th>
                   <th scope="col" className="px-6 py-4">Lokasi GPS</th>
@@ -503,6 +529,8 @@ export default function DashboardPage() {
                   Array.from({ length: 4 }).map((_, idx) => (
                     <tr key={idx} className="animate-pulse">
                       <td className="px-6 py-5.5"><div className="h-4 bg-zinc-200 dark:bg-zinc-800 rounded w-28"></div></td>
+                      <td className="px-6 py-5.5"><div className="h-4 bg-zinc-200 dark:bg-zinc-800 rounded w-16"></div></td>
+                      <td className="px-6 py-5.5"><div className="h-4 bg-zinc-200 dark:bg-zinc-800 rounded w-20"></div></td>
                       <td className="px-6 py-5.5"><div className="h-4 bg-zinc-200 dark:bg-zinc-800 rounded w-36"></div></td>
                       <td className="px-6 py-5.5"><div className="h-4 bg-zinc-200 dark:bg-zinc-800 rounded w-24"></div></td>
                       <td className="px-6 py-5.5"><div className="h-4 bg-zinc-200 dark:bg-zinc-800 rounded w-44"></div></td>
@@ -511,7 +539,7 @@ export default function DashboardPage() {
                   ))
                 ) : filteredLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-16 text-center">
+                    <td colSpan={7} className="px-6 py-16 text-center">
                       <div className="max-w-xs mx-auto space-y-2 text-zinc-400">
                         <ShieldAlert className="h-10 w-10 mx-auto text-zinc-300" />
                         <p className="font-semibold text-zinc-600 dark:text-zinc-400">Data Tidak Ditemukan</p>
@@ -525,6 +553,8 @@ export default function DashboardPage() {
                   filteredLogs.map((log) => {
                     const [namaPetugas, jabatan] = log.nama.split(" - ");
                     const hasCoordinates = log.latitude !== null && log.longitude !== null;
+                    const logTipe = log.tipe || "MASUK";
+                    const logStatusWaktu = log.status_waktu || "Tepat Waktu";
 
                     return (
                       <tr 
@@ -536,6 +566,28 @@ export default function DashboardPage() {
                             dateStyle: "medium",
                             timeStyle: "short"
                           })}
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2.5 py-1 text-[10px] font-extrabold rounded-full border ${
+                            logTipe === "PULANG"
+                              ? "bg-amber-500/10 text-amber-500 dark:text-amber-400 border-amber-500/30"
+                              : "bg-blue-500/10 text-blue-500 dark:text-blue-400 border-blue-500/30"
+                          }`}>
+                            {logTipe}
+                          </span>
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full border ${
+                            logStatusWaktu.includes("Terlambat")
+                              ? "bg-rose-500/10 text-rose-500 dark:text-rose-400 border-rose-500/30"
+                              : logStatusWaktu === "Pulang Cepat"
+                              ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/30"
+                              : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                          }`}>
+                            {logStatusWaktu}
+                          </span>
                         </td>
 
                         <td className="px-6 py-4 font-semibold text-zinc-950 dark:text-white">

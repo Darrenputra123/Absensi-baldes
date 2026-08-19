@@ -4,7 +4,7 @@
 -- Jalankan skrip ini di Supabase SQL Editor (Dashboard > SQL Editor > New Query)
 -- ====================================================================
 
--- 1. Membuat Tabel 'presensi' (Menyimpan Catatan Absensi)
+-- 1. Membuat Tabel 'presensi' (Menyimpan Catatan Absensi Masuk & Pulang)
 CREATE TABLE IF NOT EXISTS public.presensi (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
@@ -12,8 +12,14 @@ CREATE TABLE IF NOT EXISTS public.presensi (
     timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
     latitude NUMERIC,
     longitude NUMERIC,
-    photo_url TEXT NOT NULL
+    photo_url TEXT NOT NULL,
+    tipe TEXT DEFAULT 'MASUK',
+    status_waktu TEXT DEFAULT 'Tepat Waktu'
 );
+
+-- Jalankan skrip ini jika tabel sudah ada sebelumnya:
+ALTER TABLE public.presensi ADD COLUMN IF NOT EXISTS tipe TEXT DEFAULT 'MASUK';
+ALTER TABLE public.presensi ADD COLUMN IF NOT EXISTS status_waktu TEXT DEFAULT 'Tepat Waktu';
 
 -- 2. Membuat Tabel 'officers' (Menyimpan Data Akun Username Perangkat Desa)
 CREATE TABLE IF NOT EXISTS public.officers (
