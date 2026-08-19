@@ -765,6 +765,8 @@ export default function AttendancePage() {
         status_waktu: statusWaktu,
       };
 
+      let isSavedToSupabase = false;
+
       try {
         const { data: insertedData, error: dbError } = await supabase
           .from("presensi")
@@ -781,26 +783,54 @@ export default function AttendancePage() {
           ])
           .select();
 
-        if (dbError) throw dbError;
-        if (insertedData && insertedData[0]) {
+        if (dbError) {
+          // If Supabase table missing 'tipe' or 'status_waktu' columns, retry inserting base fields
+          console.warn("Supabase schema error, retrying base insert:", dbError);
+          const { data: retryData, error: retryError } = await supabase
+            .from("presensi")
+            .insert([
+              {
+                nama: fullOfficerLabel,
+                timestamp: isoString,
+                latitude: latitude,
+                longitude: longitude,
+                photo_url: publicUrl,
+              },
+            ])
+            .select();
+
+          if (!retryError && retryData && retryData[0]) {
+            recordToSave.id = retryData[0].id;
+            isSavedToSupabase = true;
+          }
+        } else if (insertedData && insertedData[0]) {
           recordToSave.id = insertedData[0].id;
+          isSavedToSupabase = true;
         }
-      } catch {
-        // Fallback local storage for offline mode
-        const existingLogsStr = localStorage.getItem("presensi_logs_local");
-        const existingLogs = existingLogsStr ? JSON.parse(existingLogsStr) : [];
-        const newLocalRecord = {
-          id: Date.now().toString(),
-          nama: fullOfficerLabel,
-          timestamp: isoString,
-          latitude,
-          longitude,
-          photo_url: publicUrl,
-          tipe: currentType,
-          status_waktu: statusWaktu,
-        };
+      } catch (err: unknown) {
+        console.warn("Supabase insert error, saving to local storage fallback:", err);
+      }
+
+      // Always save to local storage as fallback / sync backup
+      const existingLogsStr = localStorage.getItem("presensi_logs_local");
+      const existingLogs = existingLogsStr ? JSON.parse(existingLogsStr) : [];
+      const newLocalRecord = {
+        id: recordToSave.id || Date.now().toString(),
+        nama: fullOfficerLabel,
+        timestamp: isoString,
+        latitude,
+        longitude,
+        photo_url: publicUrl,
+        tipe: currentType,
+        status_waktu: statusWaktu,
+      };
+      
+      if (!existingLogs.some((l: { id?: string; timestamp?: string }) => l.id === newLocalRecord.id || l.timestamp === isoString)) {
         existingLogs.unshift(newLocalRecord);
         localStorage.setItem("presensi_logs_local", JSON.stringify(existingLogs));
+      }
+
+      if (!recordToSave.id) {
         recordToSave.id = newLocalRecord.id;
       }
 

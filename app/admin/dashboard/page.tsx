@@ -95,19 +95,47 @@ export default function DashboardPage() {
 
   const fetchLogs = useCallback(async () => {
     setIsLoading(true);
+    let combinedLogs: AttendanceLog[] = [];
+
     try {
       const { data, error } = await supabase
         .from("presensi")
         .select("*")
         .order("timestamp", { ascending: false });
 
-      if (error) throw error;
-      setLogs(data || []);
+      if (!error && data) {
+        combinedLogs = data.map((d: { id: string; created_at: string; nama: string; timestamp: string; latitude: number | null; longitude: number | null; photo_url: string; tipe?: string; status_waktu?: string }) => ({
+          ...d,
+          tipe: d.tipe || "MASUK",
+          status_waktu: d.status_waktu || "Tepat Waktu",
+        }));
+      }
     } catch (error: unknown) {
-      console.error("Error fetching logs:", error);
-    } finally {
-      setIsLoading(false);
+      console.error("Error fetching logs from Supabase:", error);
     }
+
+    // Merge local storage fallback logs
+    try {
+      const localLogsStr = localStorage.getItem("presensi_logs_local");
+      if (localLogsStr) {
+        const localLogs: AttendanceLog[] = JSON.parse(localLogsStr);
+        localLogs.forEach((localItem) => {
+          if (!combinedLogs.some((c) => c.id === localItem.id || c.timestamp === localItem.timestamp)) {
+            combinedLogs.push({
+              ...localItem,
+              tipe: localItem.tipe || "MASUK",
+              status_waktu: localItem.status_waktu || "Tepat Waktu",
+            });
+          }
+        });
+      }
+    } catch (e) {
+      console.error("Error reading local logs:", e);
+    }
+
+    combinedLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    setLogs(combinedLogs);
+    setIsLoading(false);
   }, []);
 
   useEffect(() => {
