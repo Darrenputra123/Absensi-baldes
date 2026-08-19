@@ -27,6 +27,7 @@ interface Officer {
   nama: string;
   jabatan: string;
   username: string;
+  password?: string;
 }
 
 const defaultOfficers: Officer[] = [
@@ -232,6 +233,7 @@ export default function DashboardPage() {
         nama: newNama,
         jabatan: newJabatan,
         username: cleanUsername,
+        password: newPassword,
       };
 
       try {

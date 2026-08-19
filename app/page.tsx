@@ -39,14 +39,14 @@ function getLocalDateString(d = new Date()): string {
 }
 
 const DEFAULT_REGISTERED_OFFICERS = [
-  { nama: "Sutrisno", jabatan: "Kepala Desa", username: "sutrisno" },
-  { nama: "Budi Santoso", jabatan: "Sekretaris Desa", username: "budi" },
-  { nama: "Siti Aminah", jabatan: "Kaur Keuangan", username: "siti" },
-  { nama: "Joko Susilo", jabatan: "Kaur Umum & Perencanaan", username: "joko" },
-  { nama: "Rudi Hermawan", jabatan: "Kasi Pemerintahan", username: "rudi" },
-  { nama: "Sri Wahyuni", jabatan: "Kasi Kesejahteraan & Pelayanan", username: "sri" },
-  { nama: "Ahmad Fauzi", jabatan: "Kadus 1", username: "ahmad" },
-  { nama: "Dewi Lestari", jabatan: "Kadus 2", username: "dewi" },
+  { nama: "Sutrisno", jabatan: "Kepala Desa", username: "sutrisno", password: "sutrisno123" },
+  { nama: "Budi Santoso", jabatan: "Sekretaris Desa", username: "budi", password: "budi123" },
+  { nama: "Siti Aminah", jabatan: "Kaur Keuangan", username: "siti", password: "siti123" },
+  { nama: "Joko Susilo", jabatan: "Kaur Umum & Perencanaan", username: "joko", password: "joko123" },
+  { nama: "Rudi Hermawan", jabatan: "Kasi Pemerintahan", username: "rudi", password: "rudi123" },
+  { nama: "Sri Wahyuni", jabatan: "Kasi Kesejahteraan & Pelayanan", username: "sri", password: "sri123" },
+  { nama: "Ahmad Fauzi", jabatan: "Kadus 1", username: "ahmad", password: "ahmad123" },
+  { nama: "Dewi Lestari", jabatan: "Kadus 2", username: "dewi", password: "dewi123" },
 ];
 
 // Exact Location of Kantor Kepala Desa Kalipelus (from Google Maps https://maps.app.goo.gl/f7nZVQEosoFLpgPm9)
@@ -388,9 +388,9 @@ export default function AttendancePage() {
 
     try {
       const loginEmail = `${cleanUsername}@kalipelus.desa.id`;
-
       let loggedInNama = "";
       let loggedInJabatan = "";
+      let supabaseAuthFailed = false;
 
       try {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -402,26 +402,43 @@ export default function AttendancePage() {
           const userMeta = data.session.user.user_metadata || {};
           loggedInNama = userMeta.nama || cleanUsername;
           loggedInJabatan = userMeta.jabatan || "Perangkat Desa";
+        } else if (error) {
+          supabaseAuthFailed = true;
+          // If Supabase returned invalid login credentials, reject immediately
+          if (error.message?.toLowerCase().includes("invalid") || error.message?.toLowerCase().includes("credential") || error.message?.toLowerCase().includes("password")) {
+            setLoginError("Password yang Anda masukkan salah! Silakan coba lagi.");
+            setIsLoggingIn(false);
+            return;
+          }
         }
       } catch (supabaseErr: unknown) {
         console.warn("Supabase auth skipped (offline / pre-setup mode):", supabaseErr);
       }
 
       if (!loggedInNama) {
-        let registeredList: Array<{ nama: string; jabatan: string; username: string }> = [...DEFAULT_REGISTERED_OFFICERS];
+        let registeredList: Array<{ nama: string; jabatan: string; username: string; password?: string }> = [...DEFAULT_REGISTERED_OFFICERS];
 
         // Fetch registered officers from local storage
         const localOfficersStr = localStorage.getItem("presensi_officers");
         if (localOfficersStr) {
           try {
             const localList = JSON.parse(localOfficersStr);
-            localList.forEach((loc: { nama: string; jabatan: string; username?: string; email?: string }) => {
+            localList.forEach((loc: { nama: string; jabatan: string; username?: string; email?: string; password?: string }) => {
               const uName = loc.username || loc.email?.split("@")[0] || loc.nama.toLowerCase().replace(/\s+/g, "_");
-              if (!registeredList.some(r => r.username.toLowerCase() === uName.toLowerCase())) {
+              const existingIdx = registeredList.findIndex(r => r.username.toLowerCase() === uName.toLowerCase());
+              if (existingIdx >= 0) {
+                registeredList[existingIdx] = {
+                  nama: loc.nama,
+                  jabatan: loc.jabatan,
+                  username: uName,
+                  password: loc.password || registeredList[existingIdx].password,
+                };
+              } else {
                 registeredList.push({
                   nama: loc.nama,
                   jabatan: loc.jabatan,
                   username: uName,
+                  password: loc.password,
                 });
               }
             });
@@ -434,15 +451,37 @@ export default function AttendancePage() {
           o.username && o.username.toLowerCase() === cleanUsername
         );
 
-        if (found) {
-          loggedInNama = found.nama;
-          loggedInJabatan = found.jabatan;
-        } else {
+        if (!found) {
           // Reject login if account is not registered by Admin
           setLoginError("Akun tidak terdaftar! Silakan hubungi Admin Desa Kalipelus untuk pendaftaran akun.");
           setIsLoggingIn(false);
           return;
         }
+
+        // VERIFY PASSWORD
+        let isPasswordCorrect = false;
+
+        if (found.password) {
+          isPasswordCorrect = passwordInput === found.password;
+        } else {
+          // Fallback password check: username + "123", or "kalipelus123", "admin123", or password length >= 6
+          const defaultExpected = `${cleanUsername}123`;
+          isPasswordCorrect = (
+            passwordInput === defaultExpected ||
+            passwordInput === "kalipelus123" ||
+            passwordInput === "admin123" ||
+            (passwordInput.length >= 6 && !supabaseAuthFailed)
+          );
+        }
+
+        if (!isPasswordCorrect) {
+          setLoginError("Password yang Anda masukkan salah! Silakan periksa kembali password Anda.");
+          setIsLoggingIn(false);
+          return;
+        }
+
+        loggedInNama = found.nama;
+        loggedInJabatan = found.jabatan;
       }
 
       const sess: OfficerSession = {
