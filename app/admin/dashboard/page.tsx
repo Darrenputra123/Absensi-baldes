@@ -106,6 +106,33 @@ export default function DashboardPage() {
     }
   }, []);
 
+// Dynamic status_waktu calculator (Masuk target: 08:00 WIB, Pulang target: 16:00 WIB)
+function computeStatusWaktu(logTimestamp: string, logTipe = "MASUK", dbStatusWaktu?: string): string {
+  if (dbStatusWaktu && dbStatusWaktu !== "Tepat Waktu") {
+    return dbStatusWaktu;
+  }
+
+  const date = new Date(logTimestamp);
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const totalMins = hours * 60 + minutes;
+
+  if (logTipe === "MASUK") {
+    const targetMins = 8 * 60; // 08:00 WIB
+    if (totalMins > targetMins) {
+      const lateMins = totalMins - targetMins;
+      return `Terlambat ${lateMins} Min`;
+    }
+    return "Tepat Waktu";
+  } else {
+    const targetMins = 16 * 60; // 16:00 WIB
+    if (totalMins < targetMins) {
+      return "Pulang Cepat";
+    }
+    return "Selesai Tugas";
+  }
+}
+
   const fetchLogs = useCallback(async () => {
     setIsLoading(true);
     let combinedLogs: AttendanceLog[] = [];
@@ -117,11 +144,15 @@ export default function DashboardPage() {
         .order("timestamp", { ascending: false });
 
       if (!error && data) {
-        combinedLogs = data.map((d: { id: string; created_at: string; nama: string; timestamp: string; latitude: number | null; longitude: number | null; photo_url: string; tipe?: string; status_waktu?: string }) => ({
-          ...d,
-          tipe: d.tipe || "MASUK",
-          status_waktu: d.status_waktu || "Tepat Waktu",
-        }));
+        combinedLogs = data.map((d: { id: string; created_at: string; nama: string; timestamp: string; latitude: number | null; longitude: number | null; photo_url: string; tipe?: string; status_waktu?: string }) => {
+          const tipe = d.tipe || "MASUK";
+          const status = computeStatusWaktu(d.timestamp, tipe, d.status_waktu);
+          return {
+            ...d,
+            tipe,
+            status_waktu: status,
+          };
+        });
       }
     } catch (error: unknown) {
       console.error("Error fetching logs from Supabase:", error);
@@ -134,10 +165,12 @@ export default function DashboardPage() {
         const localLogs: AttendanceLog[] = JSON.parse(localLogsStr);
         localLogs.forEach((localItem) => {
           if (!combinedLogs.some((c) => c.id === localItem.id || c.timestamp === localItem.timestamp)) {
+            const tipe = localItem.tipe || "MASUK";
+            const status = computeStatusWaktu(localItem.timestamp, tipe, localItem.status_waktu);
             combinedLogs.push({
               ...localItem,
-              tipe: localItem.tipe || "MASUK",
-              status_waktu: localItem.status_waktu || "Tepat Waktu",
+              tipe,
+              status_waktu: status,
             });
           }
         });
