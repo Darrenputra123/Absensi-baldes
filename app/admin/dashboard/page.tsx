@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { 
   LogOut, Search, Calendar, Download, RefreshCw, MapPin, 
   Image as ImageIcon, Eye, X, CalendarDays, CheckCircle2, UserCheck, ShieldAlert,
-  UserPlus, Users, Plus, AlertCircle, Check, User
+  UserPlus, Users, Plus, AlertCircle, Check, User, Key, Edit, Trash2, Lock
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import * as XLSX from "xlsx";
@@ -31,14 +31,14 @@ interface Officer {
 }
 
 const defaultOfficers: Officer[] = [
-  { id: "1", nama: "Sutrisno", jabatan: "Kepala Desa", username: "sutrisno" },
-  { id: "2", nama: "Budi Santoso", jabatan: "Sekretaris Desa", username: "budi" },
-  { id: "3", nama: "Siti Aminah", jabatan: "Kaur Keuangan", username: "siti" },
-  { id: "4", nama: "Joko Susilo", jabatan: "Kaur Umum & Perencanaan", username: "joko" },
-  { id: "5", nama: "Rudi Hermawan", jabatan: "Kasi Pemerintahan", username: "rudi" },
-  { id: "6", nama: "Sri Wahyuni", jabatan: "Kasi Kesejahteraan & Pelayanan", username: "sri" },
-  { id: "7", nama: "Ahmad Fauzi", jabatan: "Kadus 1", username: "ahmad" },
-  { id: "8", nama: "Dewi Lestari", jabatan: "Kadus 2", username: "dewi" },
+  { id: "1", nama: "Sutrisno", jabatan: "Kepala Desa", username: "sutrisno", password: "sutrisno123" },
+  { id: "2", nama: "Budi Santoso", jabatan: "Sekretaris Desa", username: "budi", password: "budi123" },
+  { id: "3", nama: "Siti Aminah", jabatan: "Kaur Keuangan", username: "siti", password: "siti123" },
+  { id: "4", nama: "Joko Susilo", jabatan: "Kaur Umum & Perencanaan", username: "joko", password: "joko123" },
+  { id: "5", nama: "Rudi Hermawan", jabatan: "Kasi Pemerintahan", username: "rudi", password: "rudi123" },
+  { id: "6", nama: "Sri Wahyuni", jabatan: "Kasi Kesejahteraan & Pelayanan", username: "sri", password: "sri123" },
+  { id: "7", nama: "Ahmad Fauzi", jabatan: "Kadus 1", username: "ahmad", password: "ahmad123" },
+  { id: "8", nama: "Dewi Lestari", jabatan: "Kadus 2", username: "dewi", password: "dewi123" },
 ];
 
 export default function DashboardPage() {
@@ -62,6 +62,14 @@ export default function DashboardPage() {
   const [newPassword, setNewPassword] = useState("");
   const [isSubmittingOfficer, setIsSubmittingOfficer] = useState(false);
   const [officerMsg, setOfficerMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  // Modal Edit / Reset Password State
+  const [editingOfficer, setEditingOfficer] = useState<Officer | null>(null);
+  const [editNama, setEditNama] = useState("");
+  const [editJabatan, setEditJabatan] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [editMsg, setEditMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
+  const [showPasswordMap, setShowPasswordMap] = useState<Record<string, boolean>>({});
 
   const router = useRouter();
 
@@ -289,6 +297,82 @@ export default function DashboardPage() {
     } finally {
       setIsSubmittingOfficer(false);
     }
+  };
+
+  const handleOpenEditOfficer = (off: Officer) => {
+    setEditingOfficer(off);
+    setEditNama(off.nama);
+    setEditJabatan(off.jabatan);
+    setEditPassword(off.password || `${off.username}123`);
+    setEditMsg(null);
+  };
+
+  const handleSaveEditOfficer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOfficer) return;
+
+    if (!editNama || !editJabatan || !editPassword) {
+      setEditMsg({ text: "Harap isi semua bidang.", type: "error" });
+      return;
+    }
+
+    try {
+      const updatedList = officers.map((o) => {
+        if (o.id === editingOfficer.id || o.username.toLowerCase() === editingOfficer.username.toLowerCase()) {
+          return {
+            ...o,
+            nama: editNama,
+            jabatan: editJabatan,
+            password: editPassword,
+          };
+        }
+        return o;
+      });
+
+      setOfficers(updatedList);
+      localStorage.setItem("presensi_officers", JSON.stringify(updatedList));
+
+      try {
+        await supabase.from("officers").update({
+          nama: editNama,
+          jabatan: editJabatan,
+        }).eq("id", editingOfficer.id);
+      } catch {
+        // offline fallback
+      }
+
+      setEditMsg({ text: `Akun & Password ${editNama} berhasil diperbarui!`, type: "success" });
+      setTimeout(() => {
+        setEditingOfficer(null);
+        setEditMsg(null);
+      }, 1200);
+
+    } catch (err: unknown) {
+      console.error("Error updating officer:", err);
+      setEditMsg({ text: "Gagal memperbarui akun.", type: "error" });
+    }
+  };
+
+  const handleDeleteOfficer = async (off: Officer) => {
+    if (!confirm(`Apakah Anda yakin ingin menghapus akun perangkat desa ${off.nama} (@${off.username})?`)) return;
+
+    try {
+      await supabase.from("officers").delete().eq("id", off.id);
+    } catch {
+      // offline fallback
+    }
+
+    const updatedList = officers.filter((o) => o.id !== off.id && o.username.toLowerCase() !== off.username.toLowerCase());
+    setOfficers(updatedList);
+    localStorage.setItem("presensi_officers", JSON.stringify(updatedList));
+    alert(`Akun ${off.nama} berhasil dihapus.`);
+  };
+
+  const toggleShowPassword = (id: string) => {
+    setShowPasswordMap(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
   };
 
   const filteredLogs = logs.filter((log) => {
@@ -678,32 +762,101 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* Registered Officers List Card */}
+        {/* Kelola Akun Perangkat Desa Card */}
         <section className="bg-white dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/60 rounded-3xl p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-zinc-200/60 dark:border-zinc-800/60 pb-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-zinc-200/60 dark:border-zinc-800/60 pb-4">
             <div className="flex items-center gap-2.5">
               <Users className="h-5 w-5 text-blue-500" />
-              <h2 className="text-base font-bold">Daftar Akun Perangkat Desa Terdaftar</h2>
+              <div>
+                <h2 className="text-base font-bold">Kelola Akun Perangkat Desa</h2>
+                <p className="text-xs text-zinc-500">Kelola akun, ubah password, dan tambah perangkat desa baru</p>
+              </div>
             </div>
-            <span className="text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1 rounded-full">
-              {officers.length} Perangkat Aktif
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1 rounded-full">
+                {officers.length} Akun Terdaftar
+              </span>
+              <button
+                onClick={() => setShowAddOfficerModal(true)}
+                className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs px-3.5 py-2 rounded-xl transition-all shadow-md shadow-blue-500/20 cursor-pointer"
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                <span>+ Tambah Akun</span>
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-            {officers.map((off) => (
-              <div 
-                key={off.id}
-                className="bg-zinc-50 dark:bg-zinc-950 p-3.5 rounded-2xl border border-zinc-200/60 dark:border-zinc-850 space-y-1"
-              >
-                <p className="font-bold text-sm text-zinc-900 dark:text-zinc-100">{off.nama}</p>
-                <p className="text-xs text-blue-500 dark:text-blue-400 font-medium">{off.jabatan}</p>
-                <p className="text-[11px] text-zinc-400 font-mono flex items-center gap-1">
-                  <User className="h-3 w-3 text-zinc-500" />
-                  <span>{off.username}</span>
-                </p>
-              </div>
-            ))}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+            {officers.map((off) => {
+              const currentPassword = off.password || `${off.username}123`;
+              const isPasswordVisible = !!showPasswordMap[off.id];
+
+              return (
+                <div 
+                  key={off.id}
+                  className="bg-zinc-50 dark:bg-zinc-950 p-4 rounded-2xl border border-zinc-200/60 dark:border-zinc-850 flex flex-col justify-between space-y-3 hover:border-blue-500/30 transition-all group"
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-bold text-sm text-zinc-900 dark:text-zinc-100 line-clamp-1">{off.nama}</h3>
+                      <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => handleOpenEditOfficer(off)}
+                          className="p-1 rounded-lg hover:bg-blue-500/10 text-blue-500 dark:text-blue-400 transition-colors"
+                          title="Edit Akun / Reset Password"
+                        >
+                          <Edit className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteOfficer(off)}
+                          className="p-1 rounded-lg hover:bg-rose-500/10 text-rose-500 dark:text-rose-400 transition-colors"
+                          title="Hapus Akun"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-blue-500 dark:text-blue-400 font-semibold">{off.jabatan}</p>
+
+                    <div className="space-y-1 pt-1">
+                      <p className="text-[11px] text-zinc-400 font-mono flex items-center gap-1.5">
+                        <User className="h-3 w-3 text-zinc-500 shrink-0" />
+                        <span className="truncate">@{off.username}</span>
+                      </p>
+                      <div className="text-[11px] text-zinc-400 font-mono flex items-center justify-between gap-1 bg-white dark:bg-zinc-900 px-2.5 py-1 rounded-lg border border-zinc-200/60 dark:border-zinc-800">
+                        <div className="flex items-center gap-1.5 overflow-hidden">
+                          <Lock className="h-3 w-3 text-amber-500 shrink-0" />
+                          <span className="truncate font-semibold text-zinc-700 dark:text-zinc-300">
+                            {isPasswordVisible ? currentPassword : "••••••••"}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleShowPassword(off.id)}
+                          className="text-[10px] text-blue-500 hover:underline shrink-0 font-sans"
+                        >
+                          {isPasswordVisible ? "Sembunyi" : "Intip"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-zinc-200/40 dark:border-zinc-850/60 flex items-center justify-between text-[11px]">
+                    <button
+                      onClick={() => handleOpenEditOfficer(off)}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-blue-500 hover:text-blue-400 hover:underline"
+                    >
+                      <Key className="h-3 w-3" />
+                      <span>Ubah Password</span>
+                    </button>
+                    <span className="text-[10px] text-emerald-500 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                      Aktif
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </section>
       </main>
@@ -809,6 +962,97 @@ export default function DashboardPage() {
                   </>
                 )}
               </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Officer / Reset Password Modal */}
+      {editingOfficer && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 max-w-md w-full rounded-3xl p-6 shadow-2xl space-y-5 relative">
+            <div className="flex items-center justify-between border-b border-zinc-200/60 dark:border-zinc-800/60 pb-3">
+              <div className="flex items-center gap-2">
+                <Key className="h-5 w-5 text-amber-500" />
+                <div>
+                  <h3 className="font-bold text-base text-zinc-900 dark:text-white">Edit Akun & Reset Password</h3>
+                  <p className="text-[11px] text-zinc-500">@{editingOfficer.username}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingOfficer(null)}
+                className="text-zinc-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {editMsg && (
+              <div className={`p-3.5 rounded-2xl text-xs font-semibold flex items-center gap-2.5 ${
+                editMsg.type === "success" 
+                  ? "bg-blue-950/40 border border-blue-700 text-blue-300"
+                  : "bg-rose-950/40 border border-rose-800 text-rose-300"
+              }`}>
+                {editMsg.type === "success" ? <Check className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+                <span>{editMsg.text}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEditOfficer} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Nama Perangkat Desa</label>
+                <input
+                  type="text"
+                  value={editNama}
+                  onChange={(e) => setEditNama(e.target.value)}
+                  required
+                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl py-2.5 px-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Jabatan / Role</label>
+                <input
+                  type="text"
+                  value={editJabatan}
+                  onChange={(e) => setEditJabatan(e.target.value)}
+                  required
+                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl py-2.5 px-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-amber-500 uppercase tracking-wider flex items-center gap-1">
+                  <Lock className="h-3 w-3" />
+                  <span>Password Baru / Reset Password</span>
+                </label>
+                <input
+                  type="text"
+                  value={editPassword}
+                  onChange={(e) => setEditPassword(e.target.value)}
+                  placeholder="Masukkan password baru"
+                  required
+                  className="w-full bg-zinc-50 dark:bg-zinc-950 border border-amber-500/40 rounded-xl py-2.5 px-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono text-amber-500 font-bold"
+                />
+                <p className="text-[10px] text-zinc-500">Password ini yang digunakan perangkat untuk login presensi.</p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingOfficer(null)}
+                  className="w-1/2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-semibold py-2.5 rounded-xl text-xs transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="w-1/2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 rounded-xl shadow-lg transition-all text-xs flex items-center justify-center gap-1.5"
+                >
+                  <Check className="h-4 w-4" />
+                  <span>Simpan Perubahan</span>
+                </button>
+              </div>
             </form>
           </div>
         </div>
