@@ -30,6 +30,25 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
+// Helper to get local date string YYYY-MM-DD (WIB timezone safe)
+function getLocalDateString(d = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+const DEFAULT_REGISTERED_OFFICERS = [
+  { nama: "Sutrisno", jabatan: "Kepala Desa", username: "sutrisno" },
+  { nama: "Budi Santoso", jabatan: "Sekretaris Desa", username: "budi" },
+  { nama: "Siti Aminah", jabatan: "Kaur Keuangan", username: "siti" },
+  { nama: "Joko Susilo", jabatan: "Kaur Umum & Perencanaan", username: "joko" },
+  { nama: "Rudi Hermawan", jabatan: "Kasi Pemerintahan", username: "rudi" },
+  { nama: "Sri Wahyuni", jabatan: "Kasi Kesejahteraan & Pelayanan", username: "sri" },
+  { nama: "Ahmad Fauzi", jabatan: "Kadus 1", username: "ahmad" },
+  { nama: "Dewi Lestari", jabatan: "Kadus 2", username: "dewi" },
+];
+
 // Exact Location of Kantor Kepala Desa Kalipelus (from Google Maps https://maps.app.goo.gl/f7nZVQEosoFLpgPm9)
 const VILLAGE_OFFICE_COORDS = {
   lat: -7.4288485,
@@ -221,7 +240,7 @@ export default function AttendancePage() {
 
   // Check if officer has checked in for Masuk and Pulang today (2x per day check)
   const checkIfAttendedToday = useCallback(async (sessionObj: OfficerSession) => {
-    const todayStr = new Date().toISOString().split("T")[0];
+    const todayStr = getLocalDateString();
 
     const fetchedRecords: AttendanceRecord[] = [];
 
@@ -389,24 +408,40 @@ export default function AttendancePage() {
       }
 
       if (!loggedInNama) {
+        let registeredList: Array<{ nama: string; jabatan: string; username: string }> = [...DEFAULT_REGISTERED_OFFICERS];
+
+        // Fetch registered officers from local storage
         const localOfficersStr = localStorage.getItem("presensi_officers");
         if (localOfficersStr) {
-          const list = JSON.parse(localOfficersStr);
-          const found = list.find((o: { username?: string; email?: string; nama: string; jabatan: string }) => 
-            (o.username && o.username.toLowerCase() === cleanUsername) || 
-            (o.email && o.email.toLowerCase() === loginEmail.toLowerCase()) || 
-            o.nama.toLowerCase().includes(cleanUsername)
-          );
-          if (found) {
-            loggedInNama = found.nama;
-            loggedInJabatan = found.jabatan;
+          try {
+            const localList = JSON.parse(localOfficersStr);
+            localList.forEach((loc: { nama: string; jabatan: string; username?: string; email?: string }) => {
+              const uName = loc.username || loc.email?.split("@")[0] || loc.nama.toLowerCase().replace(/\s+/g, "_");
+              if (!registeredList.some(r => r.username.toLowerCase() === uName.toLowerCase())) {
+                registeredList.push({
+                  nama: loc.nama,
+                  jabatan: loc.jabatan,
+                  username: uName,
+                });
+              }
+            });
+          } catch {
+            // Skip parse error
           }
         }
 
-        if (!loggedInNama) {
-          const cleanName = cleanUsername.charAt(0).toUpperCase() + cleanUsername.slice(1);
-          loggedInNama = cleanName;
-          loggedInJabatan = "Perangkat Desa";
+        const found = registeredList.find((o) => 
+          o.username && o.username.toLowerCase() === cleanUsername
+        );
+
+        if (found) {
+          loggedInNama = found.nama;
+          loggedInJabatan = found.jabatan;
+        } else {
+          // Reject login if account is not registered by Admin
+          setLoginError("Akun tidak terdaftar! Silakan hubungi Admin Desa Kalipelus untuk pendaftaran akun.");
+          setIsLoggingIn(false);
+          return;
         }
       }
 
